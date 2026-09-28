@@ -177,93 +177,30 @@ install_uv() {
     "${UV_BIN}" --version
 }
 
-test_python_candidate() {
-    local candidate="$1"
-    local temp_dir
-    local temp_venv
-    local temp_python
-
-    temp_dir="$(mktemp -d)"
-    temp_venv="${temp_dir}/venv"
-
-    # uv can download the requested CPython version itself.
-    if ! "${UV_BIN}" venv \
-        --python "${candidate}" \
-        --no-project \
-        "${temp_venv}" \
-        >/dev/null 2>&1
-    then
-        rm -rf "${temp_dir}"
-        return 1
-    fi
-
-    temp_python="${temp_venv}/bin/python"
-
-    # This is the important check:
-    # resolve the CURRENT Kokoro release with ALL of its dependencies
-    # for this exact Python interpreter.
-    if "${UV_BIN}" pip install \
-        --python "${temp_python}" \
-        --dry-run \
-        "kokoro==${KOKORO_VERSION}" \
-        >/dev/null 2>&1
-    then
-        rm -rf "${temp_dir}"
-        return 0
-    fi
-
-    rm -rf "${temp_dir}"
-    return 1
-}
-
 select_compatible_python() {
     log "Finding a Python version compatible with current Kokoro"
 
-    local candidate
-    local minor
+    # uv understands Python version specifiers directly, e.g.
+    # >=3.10,<3.13. It checks installed interpreters first and
+    # automatically downloads a compatible CPython when necessary.
+    if ! SELECTED_PYTHON="$(
+        "${UV_BIN}" python find "${KOKORO_REQUIRES_PYTHON}" 2>/dev/null
+    )"; then
+        log "No compatible system Python found. Installing a compatible CPython with uv."
 
-    # First try Python interpreters already installed on the host.
-    while IFS= read -r candidate; do
-        [[ -n "${candidate}" ]] || continue
+        "${UV_BIN}" python install "${KOKORO_REQUIRES_PYTHON}"
 
-        if [[ ! -x "${candidate}" ]]; then
-            continue
-        fi
+        SELECTED_PYTHON="$(
+            "${UV_BIN}" python find "${KOKORO_REQUIRES_PYTHON}"
+        )"
+    fi
 
-        if test_python_candidate "${candidate}"; then
-            SELECTED_PYTHON="${candidate}"
-            printf 'Using compatible system Python: '
-            "${candidate}" --version
-            return
-        fi
-    done < <(
-        for p in /usr/bin/python3* /usr/local/bin/python3*; do
-            [[ -x "${p}" ]] || continue
-            "${p}" -c 'import sys; print(sys.executable)' 2>/dev/null || true
-        done | sort -u
-    )
+    [[ -n "${SELECTED_PYTHON}" ]] || {
+        die "Could not find a Python interpreter satisfying: ${KOKORO_REQUIRES_PYTHON}"
+    }
 
-    # No compatible system Python.
-    # Let uv obtain candidate CPython versions itself.
-    #
-    # We deliberately do not hardcode a project-required Python version.
-    # We test candidate interpreters against the actual current Kokoro
-    # dependency resolver.
-    for minor in 15 14 13 12 11 10 9 8; do
-        candidate="3.${minor}"
-
-        log "Testing CPython ${candidate}"
-
-        if test_python_candidate "${candidate}"; then
-            SELECTED_PYTHON="${candidate}"
-            printf 'Selected compatible Python: %s\n' "${candidate}"
-            return
-        fi
-
-        printf '  Python %s is not compatible/available\n' "${candidate}"
-    done
-
-    die "Could not find or install a Python version compatible with Kokoro ${KOKORO_VERSION}."
+    printf 'Selected compatible Python: '
+    "${SELECTED_PYTHON}" --version
 }
 
 create_venv() {
