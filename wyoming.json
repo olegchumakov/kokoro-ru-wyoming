@@ -1,0 +1,45 @@
+{
+  "upstream": {
+    "repo": "zaakirio/kokoro-ru",
+    "revision": "main"
+  },
+  "server": {
+    "uri": "tcp://0.0.0.0:10200"
+  },
+  "audio": {
+    "sample_rate": 24000,
+    "sample_width": 2,
+    "channels": 1,
+    "chunk_bytes": 16384
+  },
+  "streaming": {
+    "max_phoneme_tokens": 150,
+    "silence_seconds": 0.2,
+    "underrun_wait_seconds": 0.1,
+    "start_buffer_seconds": 0.0,
+    "warmup_text": "Здравствуйте! Как ваши дела сегодня?"
+  },
+  "torch": {
+    "threads": 3,
+    "interop_threads": 1
+  },
+  "logging": {
+    "level": "INFO"
+  },
+  "tts": {
+    "name": "kokoro-ru",
+    "description": "Kokoro Russian TTS",
+    "language": "ru",
+    "default_voice": null,
+    "attribution": {
+      "name": "zaakirio/kokoro-ru",
+      "url": "https://huggingface.co/zaakirio/kokoro-ru"
+    },
+    "voices": {}
+  },
+  "paths": {
+    "config": "config.json",
+    "voice_dir": "voices",
+    "models_dir": "models"
+  }
+}

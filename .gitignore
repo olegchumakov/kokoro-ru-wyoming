@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Local virtual environment
+.venv/
+
+# Runtime files downloaded from Hugging Face
+config.json
+ru_g2p.py
+models/
+voices/
+
+# Local dependency locks / generated files
+requirements*.txt
+
+# Caches
+.cache/
+.cache-*/
+.huggingface/
+huggingface/
+*.log
+
+# Backups
+*.bak
+*.bak.*
+*.backup
+*.tmp
+
+# Editors
+.vscode/
+.idea/
+*.swp
