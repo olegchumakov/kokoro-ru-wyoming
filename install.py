@@ -415,6 +415,8 @@ def main() -> int:
         },
     )
 
+    CONFIG.setdefault("tts", {}).setdefault("version", "1.0")
+
     CONFIG["upstream"] = {
         "repo": REPO_ID,
         "revision": REVISION,
