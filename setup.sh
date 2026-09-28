@@ -180,26 +180,32 @@ install_uv() {
 select_compatible_python() {
     log "Finding a Python version compatible with current Kokoro"
 
-    # uv understands Python version specifiers directly, e.g.
-    # >=3.10,<3.13. It checks installed interpreters first and
-    # automatically downloads a compatible CPython when necessary.
-    if ! SELECTED_PYTHON="$(
-        "${UV_BIN}" python find "${KOKORO_REQUIRES_PYTHON}" 2>/dev/null
-    )"; then
-        log "No compatible system Python found. Installing a compatible CPython with uv."
-
-        "${UV_BIN}" python install "${KOKORO_REQUIRES_PYTHON}"
-
-        SELECTED_PYTHON="$(
-            "${UV_BIN}" python find "${KOKORO_REQUIRES_PYTHON}"
-        )"
+    # First search only system interpreters.
+    # This deliberately ignores the project's existing .venv.
+    if SELECTED_PYTHON="$(
+        "${UV_BIN}" python find --system "${KOKORO_REQUIRES_PYTHON}" 2>/dev/null
+    )" && [[ -n "${SELECTED_PYTHON}" ]]; then
+        printf 'Selected compatible system Python: '
+        "${SELECTED_PYTHON}" --version
+        return
     fi
+
+    # No compatible system Python exists.
+    # Ask uv to install a managed CPython satisfying the exact
+    # Requires-Python constraint reported by the current Kokoro.
+    log "No compatible system Python found. Installing managed CPython with uv."
+
+    "${UV_BIN}" python install "${KOKORO_REQUIRES_PYTHON}"
+
+    SELECTED_PYTHON="$(
+        "${UV_BIN}" python find --managed-python "${KOKORO_REQUIRES_PYTHON}"
+    )"
 
     [[ -n "${SELECTED_PYTHON}" ]] || {
         die "Could not find a Python interpreter satisfying: ${KOKORO_REQUIRES_PYTHON}"
     }
 
-    printf 'Selected compatible Python: '
+    printf 'Selected uv-managed Python: '
     "${SELECTED_PYTHON}" --version
 }
 
@@ -247,7 +253,9 @@ install_python_packages() {
     "${UV_BIN}" pip install \
         --python "${python}" \
         "kokoro==${KOKORO_VERSION}" \
-        wyoming
+        wyoming \
+        ruaccent \
+        phonemizer
 
     log "Installed package versions"
 
@@ -288,11 +296,11 @@ install_missing_ru_g2p_dependencies() {
     for attempt in $(seq 1 10); do
         missing="$(
             "${python}" - <<'PY'
-import importlib
 import sys
 
 try:
-    importlib.import_module("ru_g2p")
+    from ru_g2p import RuG2P
+    RuG2P()
 except ModuleNotFoundError as exc:
     print(exc.name or "")
     sys.exit(10)
@@ -308,13 +316,38 @@ PY
                 continue
             fi
 
-            die "ru_g2p.py could not be imported."
+            die "ru_g2p.py could not be initialized."
         }
 
         return
     done
 
     die "Could not resolve ru_g2p.py dependencies automatically."
+}
+ensure_project_data() {
+    local python="${VENV_DIR}/bin/python"
+
+    log "Checking project data files"
+
+    if [[ ! -f "${BASE_DIR}/espeak-data/ru_dict" || ! -f "${BASE_DIR}/kokoro-config.json" ]]; then
+        log "Downloading espeak-data and kokoro-config.json from Hugging Face"
+
+        BASE_DIR="${BASE_DIR}" "${python}" - <<'PY'
+import os
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    repo_id="zaakirio/kokoro-ru",
+    local_dir=os.environ["BASE_DIR"],
+    allow_patterns=["espeak-data/*", "kokoro-config.json"],
+)
+PY
+    fi
+
+    [[ -f "${BASE_DIR}/espeak-data/ru_dict" ]] || \
+        die "Нет espeak-data/ru_dict после загрузки."
+    [[ -f "${BASE_DIR}/kokoro-config.json" ]] || \
+        die "Нет kokoro-config.json после загрузки."
 }
 
 validate_installation() {
@@ -419,6 +452,7 @@ main() {
     create_venv
     install_python_packages
     run_upstream_installer
+    ensure_project_data
     install_missing_ru_g2p_dependencies
     validate_installation
 
